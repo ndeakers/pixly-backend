@@ -9,8 +9,13 @@
 </head>
 
 <body>
-    <img src="" alt="">
-
+    <h3>Renders after image uploads</h3>
+    <form action="/image/{{id}}" method="POST">
+        <img src="{{img_src}}">
+        Photo name:<input type="text" name="photo_name" placeholder="name">
+        Photo location:<input type="text" name="photo_location" placeholder="location">
+        Camera model:<input type="text" name="photo_model" placeholder="{{model}}">
+    </form>
 </body>
 
 </html>
