@@ -8,12 +8,13 @@ from PIL.ExifTags import TAGS
 import boto3
 from models import Photo, connect_db, db
 from forms import UpdatePhotoForm, UploadForm
+from aws import generate_aws_url, upload_file, download_file
 
 app = Flask(__name__)
 
-client = boto3.client('s3',
-                      aws_access_key_id=AWS_ACCESS_KEY,
-                      aws_secret_access_key=AWS_SECRET_KEY)
+# client = boto3.client('s3',
+#                       aws_access_key_id=AWS_ACCESS_KEY,
+#                       aws_secret_access_key=AWS_SECRET_KEY)
 
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql:///pixly"
@@ -54,12 +55,12 @@ def upload_photo():
             # upload original image to AWS
             filename = secure_filename(f.filename)
 
+            # resize image
             basewidth = 450
             img = Image.open(f'{filename}')
             wpercent = (basewidth/float(img.size[0]))
             hsize = int((float(img.size[1])*float(wpercent)))
             img = img.resize((basewidth, hsize), Image.ANTIALIAS)
-            # img.save('somepic.jpg')
 
             img.save(os.path.join(filename))
             print("f is", f)
@@ -72,18 +73,10 @@ def upload_photo():
 
             descending = Photo.query.order_by(Photo.id.desc())
             new_photo = descending.first()
-            client.upload_file(filename, BUCKET_NAME, f"{new_photo.id}", ExtraArgs={"ACL":"public-read"}) #break this out
 
-            # aws_object = client.get_object(Bucket=BUCKET_NAME, Key=f"{new_photo.id}")
-
-            response = client.generate_presigned_url('get_object',
-                                                    Params={'Bucket': f"{BUCKET_NAME}",
-                                                            'Key': f"{new_photo.id}"},
-                                                    ExpiresIn=100000)
-
-            # img_url = f"https://{BUCKET_NAME}.s3.us-east-2.amazonaws.com/{new_photo.id}" #get url from aws
-            img_url = response.split("?")[0]
-            new_photo.image_path = img_url
+            img_url = generate_aws_url(new_photo.id)
+            upload_file(filename, new_photo.id)
+            new_photo.image_url = img_url
             db.session.commit()
             # print("aws object is", aws_object)
 
@@ -103,7 +96,9 @@ def add_photo_info(id):
     """
     form = UpdatePhotoForm()
     photo = Photo.query.get_or_404(id)
-
+    photo.image_url = generate_aws_url(id)
+    db.session.commit()
+    
     if form.validate_on_submit(): 
         photo.description = form.description.data
         photo.location = form.photo_location.data
@@ -118,7 +113,7 @@ def add_photo_info(id):
         return render_template(
             "image.html",
             id=photo.id,
-            img_src=photo.image_path,
+            img_src=photo.image_url,
             model=model,
             form=form) # on GET request, pass in relevant information from this image's entry in table
 
@@ -129,16 +124,16 @@ def convert_to_black_and_white(id):
     s;kdj;lskad
     """
     photo = Photo.query.get_or_404(id)
-    client.download_file(f'{BUCKET_NAME}', f'{photo.id}', f'{photo.id}.jpg')
+    download_file(photo.id, f'{photo.id}.jpg')
     img = Image.open(f'{photo.id}.jpg') #TODO pull down actual photo from aws
 
     image_file = img.convert('1') # convert image to black and white
     image_file.save(f"{photo.id}test.jpeg")
-    # filename = secure_filename(image_file.filename)
-    # f.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    # image_file.save(os.path.join())
-    client.upload_file(f"{photo.id}test.jpeg", BUCKET_NAME, f"{photo.id}", ExtraArgs={"ACL":"public-read"}) #break this out
+    # upload_file(f"{photo.id}test.jpeg", photo.id)
+    
     return redirect(f"/image/{id}")
+
+
 
 
 
