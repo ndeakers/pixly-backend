@@ -10,12 +10,33 @@
 
 <body>
     <h3>Renders after image uploads</h3>
-    <form action="/image/{{id}}" method="POST">
-        <img src="{{img_src}}">
-        Photo name:<input type="text" name="photo_name" placeholder="name">
-        Photo location:<input type="text" name="photo_location" placeholder="location">
-        Camera model:<input type="text" name="photo_model" placeholder="{{model}}">
+    <img src="{{img_src}}">
+    <form id="snack-add-form" method="POST">
+        {{ form.hidden_tag() }}
+        <!--add type=hidden form fields break out to a template file-->
+
+        {% for field in form
+        if field.widget.input_type != 'hidden' %}
+
+        <p>
+            {{ field.label }}
+            {{ field }}
+
+            {% for error in field.errors %}
+            {{ error }}
+            {% endfor %}
+        </p>
+
+        {% endfor %}
+
+        <button type="submit">Submit</button>
     </form>
+
+
+    <form action="{{id}}/black_and_white" method="POST">
+        <button type="submit">Black and White</button>
+    </form>
+
 </body>
 
 </html>
