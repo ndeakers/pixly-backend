@@ -10,3 +10,7 @@ class UpdatePhotoForm(FlaskForm):
 
 class UploadForm(FlaskForm):
     upload_file = FileField()
+
+
+class EditButton(FlaskForm):
+    """Protected Button, purposefully blank"""

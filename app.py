@@ -1,13 +1,13 @@
 """Flask app for Pixly Backend"""
 import os
-from flask import Flask, render_template, redirect, request, flash
+from flask import Flask, render_template, redirect, request, flash, session
 from werkzeug.utils import secure_filename
 from project_secrets import SECRET_KEY, AWS_ACCESS_KEY, AWS_SECRET_KEY, BUCKET_NAME
 from PIL import Image
 from PIL.ExifTags import TAGS
 import boto3
 from models import Photo, connect_db, db
-from forms import UpdatePhotoForm, UploadForm
+from forms import UpdatePhotoForm, UploadForm, EditButton
 from aws import generate_aws_url, upload_file, download_file
 
 app = Flask(__name__)
@@ -23,6 +23,11 @@ app.config['SQLALCHEMY_ECHO'] = True
 UPLOAD_FOLDER = './UPLOAD_FOLDER'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg'}
+
+
+
+
+
 
 connect_db(app)
 db.create_all()
@@ -49,12 +54,13 @@ def upload_photo():
     """
     form = UploadForm()
     if form.validate_on_submit():
+
         f = form.upload_file.data
         print("f is", f)
         if f and allowed_file(f.filename):
+            session.clear()
             # upload original image to AWS
             filename = secure_filename(f.filename)
-
             # resize image
             basewidth = 450
             img = Image.open(f'{filename}')
@@ -74,8 +80,8 @@ def upload_photo():
             descending = Photo.query.order_by(Photo.id.desc())
             new_photo = descending.first()
 
-            img_url = generate_aws_url(new_photo.id)
             upload_file(filename, new_photo.id)
+            img_url = generate_aws_url(new_photo.id)
             new_photo.image_url = img_url
             db.session.commit()
             # print("aws object is", aws_object)
@@ -96,7 +102,10 @@ def add_photo_info(id):
     """
     form = UpdatePhotoForm()
     photo = Photo.query.get_or_404(id)
+    #put filename on g
     photo.image_url = generate_aws_url(id)
+    session['ORIGINAL_IMAGE'] = photo.image_url
+    print("session in IMAGE/id", session)
     db.session.commit()
     
     if form.validate_on_submit(): 
@@ -113,7 +122,7 @@ def add_photo_info(id):
         return render_template(
             "image.html",
             id=photo.id,
-            img_src=photo.image_url,
+            img_src=session['ORIGINAL_IMAGE'],
             model=model,
             form=form) # on GET request, pass in relevant information from this image's entry in table
 
@@ -125,13 +134,33 @@ def convert_to_black_and_white(id):
     """
     photo = Photo.query.get_or_404(id)
     download_file(photo.id, f'{photo.id}.jpg')
-    img = Image.open(f'{photo.id}.jpg') #TODO pull down actual photo from aws
+    img = Image.open(f'{photo.id}.jpg') 
 
     image_file = img.convert('1') # convert image to black and white
     image_file.save(f"{photo.id}test.jpeg")
+    session['CURRENT_PHOTO_FILENAME'] = f"{photo.id}test.jpeg"
     # upload_file(f"{photo.id}test.jpeg", photo.id)
     
-    return redirect(f"/image/{id}")
+    return redirect(f"/image/{id}/edit")
+
+
+@app.route("/image/<int:id>/edit", methods=['POST', 'GET'])
+def edit_image(id):
+    """ On GET show what is the currrent photo in g"""
+    form = EditButton()
+    photo_to_display = f"/{session.get('CURRENT_PHOTO_FILENAME')}" if session.get('CURRENT_PHOTO_FILENAME') else session['ORIGINAL_IMAGE']
+    print("photo to display", photo_to_display, "session---->", session)
+
+    if form.validate_on_submit():
+        upload_file(session['CURRENT_PHOTO_FILENAME'], id)
+    
+        return redirect(f"/image/{id}")
+    
+    return render_template(
+            "edit.html",
+            id=id,
+            img_src=photo_to_display,
+            form=form) # on GET request, pass in relevant information from this image's entry in table
 
 
 

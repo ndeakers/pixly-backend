@@ -22,7 +22,7 @@ class Photo(db.Model):
     description = db.Column(db.String, nullable=True)
     location = db.Column(db.String(100), nullable=True)
     model = db.Column(db.String(100), nullable=True)
-    image_url = db.Column(db.String, nullable=True) #call image_url
+    image_url = db.Column(db.String, nullable=True) 
 
     def serialize(self):
         """Serialize to dictionary."""
