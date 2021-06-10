@@ -33,8 +33,10 @@ def allowed_file(filename):
 
 
 @app.route("/")
-def display_new_photo_form():
-    """"""
+def display_homepage():
+    """
+
+    """
     return render_template("landing.html")
 
 
@@ -51,7 +53,15 @@ def upload_photo():
         if f and allowed_file(f.filename):
             # upload original image to AWS
             filename = secure_filename(f.filename)
-            f.save(os.path.join(filename))
+
+            basewidth = 450
+            img = Image.open(f'{filename}')
+            wpercent = (basewidth/float(img.size[0]))
+            hsize = int((float(img.size[1])*float(wpercent)))
+            img = img.resize((basewidth, hsize), Image.ANTIALIAS)
+            # img.save('somepic.jpg')
+
+            img.save(os.path.join(filename))
             print("f is", f)
 
             photo = Photo(
@@ -64,8 +74,15 @@ def upload_photo():
             new_photo = descending.first()
             client.upload_file(filename, BUCKET_NAME, f"{new_photo.id}", ExtraArgs={"ACL":"public-read"}) #break this out
 
-            # aws_object = client.get_object(Bucket=BUCKET_NAME, Key=f"${filename}")
-            img_url = f"https://{BUCKET_NAME}.s3.us-east-2.amazonaws.com/{new_photo.id}" #get url from aws
+            # aws_object = client.get_object(Bucket=BUCKET_NAME, Key=f"{new_photo.id}")
+
+            response = client.generate_presigned_url('get_object',
+                                                    Params={'Bucket': f"{BUCKET_NAME}",
+                                                            'Key': f"{new_photo.id}"},
+                                                    ExpiresIn=100000)
+
+            # img_url = f"https://{BUCKET_NAME}.s3.us-east-2.amazonaws.com/{new_photo.id}" #get url from aws
+            img_url = response.split("?")[0]
             new_photo.image_path = img_url
             db.session.commit()
             # print("aws object is", aws_object)
@@ -103,21 +120,24 @@ def add_photo_info(id):
             id=photo.id,
             img_src=photo.image_path,
             model=model,
-            form=form)
+            form=form) # on GET request, pass in relevant information from this image's entry in table
 
 
 @app.route("/image/<int:id>/black_and_white", methods=['POST'])
 def convert_to_black_and_white(id):
-    # some code to change to black and white
-    # source for this is:
-    # https://stackoverflow.com/questions/9506841/using-python-pil-to-turn-a-rgb-image-into-a-pure-black-and-white-image
+    """
+    s;kdj;lskad
+    """
     photo = Photo.query.get_or_404(id)
-    img = Image.open(photo.image_path) #TODO pull down actual photo from aws
+    client.download_file(f'{BUCKET_NAME}', f'{photo.id}', f'{photo.id}.jpg')
+    img = Image.open(f'{photo.id}.jpg') #TODO pull down actual photo from aws
+
     image_file = img.convert('1') # convert image to black and white
-    filename = secure_filename(image_file.filename)
+    image_file.save(f"{photo.id}test.jpeg")
+    # filename = secure_filename(image_file.filename)
     # f.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    image_file.save(os.path.join(filename))
-    client.upload_file(filename, BUCKET_NAME, f"{photo.id}", ExtraArgs={"ACL":"public-read"}) #break this out
+    # image_file.save(os.path.join())
+    client.upload_file(f"{photo.id}test.jpeg", BUCKET_NAME, f"{photo.id}", ExtraArgs={"ACL":"public-read"}) #break this out
     return redirect(f"/image/{id}")
 
 
@@ -130,14 +150,6 @@ def convert_to_black_and_white(id):
 
 
 # Notes with some code on changing image color configuration
-
-        # some code to change to black and white
-        # source for this is:
-        # https://stackoverflow.com/questions/9506841/using-python-pil-to-turn-a-rgb-image-into-a-pure-black-and-white-image
-        # img = Image.open("./UPLOAD_FOLDER/jpegsystems-home.jpeg")
-        # image_file = img.convert('1') # convert image to black and white
-        # # f.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        # image_file.save('result.png')
 
 
         # img_color = img.convert("RGBA")
