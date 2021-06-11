@@ -6,7 +6,7 @@ from PIL import ImageOps, Image
 def add_border(img):
   """Accepts an image and returns that image with a border added."""
 
-  return ImageOps.expand(img, border=25, fill='black')
+  return ImageOps.expand(img, border=15, fill='black')
 
 
 def determine_img_version(id):

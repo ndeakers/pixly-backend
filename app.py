@@ -10,6 +10,7 @@ from forms import UpdatePhotoForm, UploadForm, EditButton
 from aws import generate_aws_url, upload_file, download_file
 from edit_photo_functions import add_border, determine_img_version
 import glob
+from pathlib import Path
 
 app = Flask(__name__)
 
@@ -182,12 +183,11 @@ def revert_to_original_image(id):
 @app.route("/image/<int:id>/save", methods=["POST"])
 def save_image(id):
     current_photo = session.get('CURRENT_PHOTO_FILENAME', None)
-    upload_file(current_photo, id)
+    upload_file(f".{current_photo}", id)
 
-    files = glob.glob('./static/photos')
-    for f in files:
-        os.remove(f)
-    return redirect(f"/image/{id}/")
+    [f.unlink() for f in Path("./static/photos").glob("*") if f.is_file()]
+    session.pop('CURRENT_PHOTO_FILENAME', None) 
+    return redirect(f"/image/{id}")
 
 
 # TODO Add routes for reverting to original and saving any edits
