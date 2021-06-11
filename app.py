@@ -1,16 +1,14 @@
 """Flask app for Pixly Backend"""
-import os
-from flask import Flask, render_template, redirect, request, flash, session
+# rename aws to something more specific
+from flask import Flask, render_template, redirect, flash, session
 from werkzeug.utils import secure_filename
-from project_secrets import SECRET_KEY, AWS_ACCESS_KEY, AWS_SECRET_KEY, BUCKET_NAME
-from PIL import Image, ImageOps
+from PIL import Image
 from PIL.ExifTags import TAGS
 from models import Photo, connect_db, db
 from forms import UpdatePhotoForm, UploadForm, EditButton
-from aws import generate_aws_url, upload_file, download_file
-from edit_photo_functions import add_border, determine_img_version
-import glob
-from pathlib import Path
+from aws import generate_aws_url, upload_file
+from edit_photo_functions import add_border, determine_img_version, empty_local_photos
+from project_secrets import SECRET_KEY
 
 app = Flask(__name__)
 
@@ -18,8 +16,6 @@ app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql:///pixly"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = True
-UPLOAD_FOLDER = './UPLOAD_FOLDER'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg'}
 
 
@@ -35,12 +31,12 @@ def allowed_file(filename):
 @app.route("/")
 def display_homepage():
     """
-
+    Renders homepage for Pixly.
     """
     return render_template("landing.html")
 
 
-@app.route('/uploader', methods=['POST', 'GET']) ## TODO abstract querying to model
+@app.route('/upload', methods=['POST', 'GET'])
 def upload_photo():
     """
     On GET, renders form to upload a photo
@@ -51,11 +47,15 @@ def upload_photo():
 
         f = form.upload_file.data
         print("f is", f)
+        # can make validation below part of the WTForm validation
         if f and allowed_file(f.filename):
             session.clear()
+            # change this to session pop to remove specific keys
+
             # upload original image to AWS
             filename = secure_filename(f.filename)
             f.save(f'./static/photos/{filename}')
+
             # resize image
             basewidth = 450
             img = Image.open(f'./static/photos/{filename}')
@@ -63,27 +63,27 @@ def upload_photo():
             hsize = int((float(img.size[1])*float(wpercent)))
             img = img.resize((basewidth, hsize), Image.ANTIALIAS)
 
-            # img.save(os.path.join(filename)) prob removing this
             img.save(f'./static/photos/{filename}')
+            # TODO there's another library in python called tempdirectory, which provides fake folders
+            # to store things on disc in memory instead of what we're doing here
 
+            # create new photo record with the filename
             photo = Photo(
                 file_name=f.filename
             )
             db.session.add(photo)
             db.session.commit()
 
-            descending = Photo.query.order_by(Photo.id.desc())
-            new_photo = descending.first()
+            uploaded_photo = Photo.query.order_by(Photo.id.desc()).first()
 
-            upload_file(f"./static/photos/{filename}", new_photo.id)
-            img_url = generate_aws_url(new_photo.id)
-            new_photo.image_url = img_url
+            upload_file(f"./static/photos/{filename}", uploaded_photo.id)
+            img_url = generate_aws_url(uploaded_photo.id)
+            uploaded_photo.image_url = img_url
             db.session.commit()
-            # print("aws object is", aws_object)
 
-            return redirect(f"/image/{new_photo.id}")
+            return redirect(f"/image/{uploaded_photo.id}")
 
-        flash("We only accept jpg photos!")
+        flash("We only accept jpg and jpeg photos!")
         return render_template("upload.html", form=form)
 
     return render_template("upload.html", form=form)
@@ -95,42 +95,35 @@ def add_photo_info(id):
     ON GET, renders form to add info on photo, displays photo
     ON POST, updates db with form inputs
     """
-    form = UpdatePhotoForm()
     photo = Photo.query.get_or_404(id)
+    form = UpdatePhotoForm(obj=photo)
 
     photo.image_url = generate_aws_url(id)
-    session['ORIGINAL_IMAGE'] = photo.image_url
-    print("session in IMAGE/id", session)
+    session['ORIGINAL_IMAGE_URL'] = photo.image_url
     db.session.commit()
 
-    if form.validate_on_submit(): 
+    if form.validate_on_submit():
         photo.description = form.description.data
-        photo.location = form.photo_location.data
-        photo.model = form.camera_model.data
+        photo.location = form.location.data
+        photo.model = form.model.data
         db.session.commit()
-        return redirect("/")
-    else:    
-        if photo.model is None: #check here
-            model = "Enter camera model here!"
-        else:
-            model = photo.model
-        return render_template(
-            "image.html",
-            id=photo.id,
-            img_src=session['ORIGINAL_IMAGE'],
-            model=model,
-            form=form) # on GET request, pass in relevant information from this image's entry in table
+        return redirect(f"/image/{id}")
+
+    return render_template(
+        "image.html",
+        id=photo.id,
+        img_src=session['ORIGINAL_IMAGE_URL'],
+        form=form)
 
 
 @app.route("/image/<int:id>/edit", methods=['POST', 'GET'])
 def edit_image(id):
-    """ On GET show what is the current photo in g"""
+    """ On GET show what is the photo session"""
     form = EditButton()
 
-    if session.get('CURRENT_PHOTO_FILENAME'):
-        photo_to_display = f"{session.get('CURRENT_PHOTO_FILENAME')}"
-    else:
-        photo_to_display = session.get('ORIGINAL_IMAGE')
+    photo_to_display = session.get(
+        'CURRENT_PHOTO_FILENAME',
+        session.get('ORIGINAL_IMAGE_URL'))
 
     # if POST
     if form.validate_on_submit():
@@ -157,7 +150,8 @@ def convert_to_black_and_white(id):
     session['CURRENT_PHOTO_FILENAME'] = f"/static/photos/{id}test.jpeg"
 
     return redirect(f"/image/{id}/edit")
-
+# TODO adjust photo storing and editing to be depending on EXIFdata
+# if EXIFdata doesn't exist, we can write it ourselves
 
 @app.route("/image/<int:id>/border", methods=['POST'])
 def add_border_to_image(id):
@@ -169,35 +163,43 @@ def add_border_to_image(id):
     img_with_border = add_border(img)
     img_with_border.save(f'./static/photos/{id}w_border.jpeg')
     session['CURRENT_PHOTO_FILENAME'] = f"/static/photos/{id}w_border.jpeg"
+
     return redirect(f"/image/{id}/edit")
+# TODO combine border/bw editing routes to be one route that takes
+# <type_of_edit> at the end of the path and then have some logic
+# in the view function that detemrines what should occur at each
 
 
 @app.route("/image/<int:id>/revert", methods=["POST"])
-def revert_to_original_image(id):
+def revert_to_original_image_URL(id):
+    """
+    Wipes current edits made to photo and resets back to original.
+    Redirects back to editing page.
+    """
     image_url = generate_aws_url(id)
-    session["ORIGINAL_IMAGE"] = image_url
+    session["ORIGINAL_IMAGE_URL"] = image_url
     session.pop('CURRENT_PHOTO_FILENAME', None)
     return redirect(f"/image/{id}/edit")
 
 
 @app.route("/image/<int:id>/save", methods=["POST"])
 def save_image(id):
+    """
+    Saves current version of photo to AWS, redirects to photo's landing page.
+    """
     current_photo = session.get('CURRENT_PHOTO_FILENAME', None)
     upload_file(f".{current_photo}", id)
 
-    [f.unlink() for f in Path("./static/photos").glob("*") if f.is_file()]
-    session.pop('CURRENT_PHOTO_FILENAME', None) 
+    empty_local_photos()
+    session.pop('CURRENT_PHOTO_FILENAME', None)
     return redirect(f"/image/{id}")
 
-
-# TODO Add routes for reverting to original and saving any edits
+# TODO expand Photo class to include editing, uploading, saving methods
+# TODO adjust homepage to display most recent 10 photos as thumbnails & links to edit them
 # TODO full text search
-# TODO throw any exifdata into separate table
-# TODO look into WTForms placeholders
+# TODO throw any exifdata into separate table, foreign key being id
 
-
-
-# extract EXIF data and save to db
+# EXIF data logic
             # img = Image.open(filename)
             # os.remove(filename)
             # exifdata = img.getexif()

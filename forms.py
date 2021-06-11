@@ -4,12 +4,13 @@ from wtforms import StringField, FileField
 
 class UpdatePhotoForm(FlaskForm):
     description = StringField("Description")
-    photo_location = StringField("Photo Location")
-    camera_model = StringField("Camera Model")
+    location = StringField("Photo Location")
+    model = StringField("Camera Model")
 
 
 class UploadForm(FlaskForm):
     upload_file = FileField()
+    # can add file type validation in here
 
 
 class EditButton(FlaskForm):

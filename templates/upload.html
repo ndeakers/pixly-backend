@@ -20,7 +20,7 @@
     </ul>
     {% endif %}
     {% endwith %}
-    <form method="post" action="/uploader" enctype="multipart/form-data">
+    <form method="post" action="/upload" enctype="multipart/form-data">
       {{ form.hidden_tag() }}
       {{ form.upload_file }}
       <input type="submit">

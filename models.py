@@ -22,7 +22,7 @@ class Photo(db.Model):
     description = db.Column(db.String, nullable=True)
     location = db.Column(db.String(100), nullable=True)
     model = db.Column(db.String(100), nullable=True)
-    image_url = db.Column(db.String, nullable=True) 
+    image_url = db.Column(db.String, nullable=True)
 
     def serialize(self):
         """Serialize to dictionary."""
@@ -37,3 +37,5 @@ class Photo(db.Model):
 
     # def get_photo_from_aws(self):
     #     return
+
+# aws class should go in here

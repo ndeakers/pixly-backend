@@ -8,17 +8,23 @@ client = boto3.client('s3',
 
 
 def generate_aws_url(id):
-    response = client.generate_presigned_url('get_object',
-                                             Params={'Bucket': f"{BUCKET_NAME}",
-                                                     'Key': f"{id}"},
-                                                     ExpiresIn=100000)
+
+    params = {
+        'Bucket': f"{BUCKET_NAME}",
+        'Key': f"{id}"}
+
+    response = client.generate_presigned_url(
+        'get_object',
+        Params=params,
+        ExpiresIn=100000)
 
     img_url = response.split("?")[0]
     return img_url
+    # use library called urllib to parse urls
 
 
 def upload_file(filename, id):
-    client.upload_file(filename, BUCKET_NAME, f"{id}", ExtraArgs={"ACL":"public-read"}) #break this out
+    client.upload_file(filename, BUCKET_NAME, f"{id}", ExtraArgs={"ACL":"public-read"})
 
 
 def download_file(id, filename):
