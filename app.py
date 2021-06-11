@@ -3,18 +3,14 @@ import os
 from flask import Flask, render_template, redirect, request, flash, session
 from werkzeug.utils import secure_filename
 from project_secrets import SECRET_KEY, AWS_ACCESS_KEY, AWS_SECRET_KEY, BUCKET_NAME
-from PIL import Image
+from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS
-import boto3
 from models import Photo, connect_db, db
 from forms import UpdatePhotoForm, UploadForm, EditButton
 from aws import generate_aws_url, upload_file, download_file
+from edit_photo_functions import add_border, determine_img_version
 
 app = Flask(__name__)
-
-# client = boto3.client('s3',
-#                       aws_access_key_id=AWS_ACCESS_KEY,
-#                       aws_secret_access_key=AWS_SECRET_KEY)
 
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql:///pixly"
@@ -23,10 +19,6 @@ app.config['SQLALCHEMY_ECHO'] = True
 UPLOAD_FOLDER = './UPLOAD_FOLDER'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg'}
-
-
-
-
 
 
 connect_db(app)
@@ -68,8 +60,8 @@ def upload_photo():
             hsize = int((float(img.size[1])*float(wpercent)))
             img = img.resize((basewidth, hsize), Image.ANTIALIAS)
 
-            img.save(os.path.join(filename))
-            print("f is", f)
+            # img.save(os.path.join(filename)) prob removing this
+            img.save(f'./static/photos/{id}.jpeg')
 
             photo = Photo(
                 file_name=f.filename
@@ -88,7 +80,7 @@ def upload_photo():
 
             return redirect(f"/image/{new_photo.id}")
 
-        flash("We only accept jpg and jpeg!")
+        flash("We only accept jpg photos!")
         return render_template("upload.html", form=form)
 
     return render_template("upload.html", form=form)
@@ -98,23 +90,23 @@ def upload_photo():
 def add_photo_info(id):
     """
     ON GET, renders form to add info on photo, displays photo
-    ON POST, updats db with form inputs
+    ON POST, updates db with form inputs
     """
     form = UpdatePhotoForm()
     photo = Photo.query.get_or_404(id)
-    #put filename on g
+
     photo.image_url = generate_aws_url(id)
     session['ORIGINAL_IMAGE'] = photo.image_url
     print("session in IMAGE/id", session)
     db.session.commit()
-    
+
     if form.validate_on_submit(): 
         photo.description = form.description.data
         photo.location = form.photo_location.data
         photo.model = form.camera_model.data
         db.session.commit()
         return redirect("/")
-    else:        
+    else:    
         if photo.model is None: #check here
             model = "Enter camera model here!"
         else:
@@ -127,75 +119,60 @@ def add_photo_info(id):
             form=form) # on GET request, pass in relevant information from this image's entry in table
 
 
-@app.route("/image/<int:id>/black_and_white", methods=['POST'])
-def convert_to_black_and_white(id):
-    """
-    s;kdj;lskad
-    """
-    photo = Photo.query.get_or_404(id)
-    download_file(photo.id, f'{photo.id}.jpg')
-    img = Image.open(f'{photo.id}.jpg') 
-
-    image_file = img.convert('1') # convert image to black and white
-    image_file.save(f"{photo.id}test.jpeg")
-    session['CURRENT_PHOTO_FILENAME'] = f"{photo.id}test.jpeg"
-    # upload_file(f"{photo.id}test.jpeg", photo.id)
-    
-    return redirect(f"/image/{id}/edit")
-
-
 @app.route("/image/<int:id>/edit", methods=['POST', 'GET'])
 def edit_image(id):
-    """ On GET show what is the currrent photo in g"""
+    """ On GET show what is the current photo in g"""
     form = EditButton()
-    photo_to_display = f"/{session.get('CURRENT_PHOTO_FILENAME')}" if session.get('CURRENT_PHOTO_FILENAME') else session['ORIGINAL_IMAGE']
-    print("photo to display", photo_to_display, "session---->", session)
 
+    if session.get('CURRENT_PHOTO_FILENAME'):
+        photo_to_display = f"{session.get('CURRENT_PHOTO_FILENAME')}"
+    else:
+        photo_to_display = session.get('ORIGINAL_IMAGE')
+
+    # if POST
     if form.validate_on_submit():
         upload_file(session['CURRENT_PHOTO_FILENAME'], id)
-    
         return redirect(f"/image/{id}")
-    
+
+    # if GET
     return render_template(
             "edit.html",
             id=id,
             img_src=photo_to_display,
-            form=form) # on GET request, pass in relevant information from this image's entry in table
+            form=form)
 
 
+@app.route("/image/<int:id>/black_and_white", methods=['POST'])
+def convert_to_black_and_white(id):
+    """Converts an image to black-and-white."""
+
+    img = determine_img_version(id)
+
+    # convert image to black and white, save to server/session and redirect
+    image_file = img.convert('1')
+    image_file.save(f"./static/photos/{id}test.jpeg")
+    session['CURRENT_PHOTO_FILENAME'] = f"/static/photos/{id}test.jpeg"
+
+    return redirect(f"/image/{id}/edit")
 
 
+@app.route("/image/<int:id>/border", methods=['POST'])
+def add_border_to_image(id):
+    """Adds a border to an image."""
+
+    img = determine_img_version(id)
+
+    # add border to image, save to server/session and redirect
+    img_with_border = add_border(img)
+    img_with_border.save(f'./static/photos/{id}w_border.jpeg')
+    session['CURRENT_PHOTO_FILENAME'] = f"/static/photos/{id}w_border.jpeg"
+    return redirect(f"/image/{id}/edit")
 
 
-
-
-
-
-
-
-# Notes with some code on changing image color configuration
-
-
-        # img_color = img.convert("RGBA")
-        # w, h = img_color.size
-        # cnt = 0
-        # for px in img_color.getdata():
-        #     img_color.putpixel((int(cnt % w), int(cnt / w)), (0, 0, 0, px[3]))
-        #     cnt += 1  
-        # print("what is image_color", img_color.getdata())
-        # new_filename = secure_filename(f.filename)
-        # 
-        #                 
-        # exif_values = {}
-        # for tag in img.getexif().items:
-        #     print("exifValues", tag)
-        #     # if tag in TAGS:
-        #     #     exif_values[TAGS[tag]] = value
-        # return jsonify(exif_values)
-
-
-
-# loop over all tags in list of items from img.
+# TODO Add routes for reverting to original and saving any edits
+# TODO full text search
+# TODO throw any exifdata into separate table
+# TODO look into WTForms placeholders
 
 
 
