@@ -9,6 +9,7 @@ from models import Photo, connect_db, db
 from forms import UpdatePhotoForm, UploadForm, EditButton
 from aws import generate_aws_url, upload_file, download_file
 from edit_photo_functions import add_border, determine_img_version
+import glob
 
 app = Flask(__name__)
 
@@ -53,15 +54,16 @@ def upload_photo():
             session.clear()
             # upload original image to AWS
             filename = secure_filename(f.filename)
+            f.save(f'./static/photos/{filename}')
             # resize image
             basewidth = 450
-            img = Image.open(f'{filename}')
+            img = Image.open(f'./static/photos/{filename}')
             wpercent = (basewidth/float(img.size[0]))
             hsize = int((float(img.size[1])*float(wpercent)))
             img = img.resize((basewidth, hsize), Image.ANTIALIAS)
 
             # img.save(os.path.join(filename)) prob removing this
-            img.save(f'./static/photos/{id}.jpeg')
+            img.save(f'./static/photos/{filename}')
 
             photo = Photo(
                 file_name=f.filename
@@ -72,7 +74,7 @@ def upload_photo():
             descending = Photo.query.order_by(Photo.id.desc())
             new_photo = descending.first()
 
-            upload_file(filename, new_photo.id)
+            upload_file(f"./static/photos/{filename}", new_photo.id)
             img_url = generate_aws_url(new_photo.id)
             new_photo.image_url = img_url
             db.session.commit()
@@ -167,6 +169,25 @@ def add_border_to_image(id):
     img_with_border.save(f'./static/photos/{id}w_border.jpeg')
     session['CURRENT_PHOTO_FILENAME'] = f"/static/photos/{id}w_border.jpeg"
     return redirect(f"/image/{id}/edit")
+
+
+@app.route("/image/<int:id>/revert", methods=["POST"])
+def revert_to_original_image(id):
+    image_url = generate_aws_url(id)
+    session["ORIGINAL_IMAGE"] = image_url
+    session.pop('CURRENT_PHOTO_FILENAME', None)
+    return redirect(f"/image/{id}/edit")
+
+
+@app.route("/image/<int:id>/save", methods=["POST"])
+def save_image(id):
+    current_photo = session.get('CURRENT_PHOTO_FILENAME', None)
+    upload_file(current_photo, id)
+
+    files = glob.glob('./static/photos')
+    for f in files:
+        os.remove(f)
+    return redirect(f"/image/{id}/")
 
 
 # TODO Add routes for reverting to original and saving any edits
